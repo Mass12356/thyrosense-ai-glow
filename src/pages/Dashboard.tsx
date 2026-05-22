@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -15,7 +16,8 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, Tooltip,
   XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend,
 } from "recharts";
-import { tshTrendData, monthlyScanData, riskDistributionData, scanHistory, aiInsights, userProfile } from "@/data/mockData";
+import { getDashboardSummary } from "@/lib/api";
+import type { DashboardSummary } from "@/lib/types";
 
 function SkeletonCard() {
   return (
@@ -86,24 +88,38 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
 };
 
 export default function Dashboard() {
-  const [loading, setLoading] = useState(true);
-  const [liveScore, setLiveScore] = useState(userProfile.healthScore);
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: getDashboardSummary
+  });
 
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 1200);
-    return () => clearTimeout(t);
-  }, []);
+  const summary: DashboardSummary = useMemo(() => {
+    return data || {
+      user: {
+        name: "User",
+        email: "",
+        lastScan: "N/A",
+        totalScans: 0,
+        healthScore: 0,
+        riskLevel: "Low",
+        doctor: "",
+        location: ""
+      },
+      tshTrendData: [],
+      monthlyScanData: [],
+      riskDistributionData: [],
+      recentScans: [],
+      aiInsights: []
+    };
+  }, [data]);
 
-  // Simulate live update
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLiveScore((s) => {
-        const delta = Math.floor(Math.random() * 3) - 1;
-        return Math.max(60, Math.min(100, s + delta));
-      });
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const userProfile = summary.user;
+  const liveScore = userProfile.healthScore || 0;
+  const tshTrendData = summary.tshTrendData;
+  const monthlyScanData = summary.monthlyScanData;
+  const riskDistributionData = summary.riskDistributionData;
+  const scanHistory = summary.recentScans;
+  const aiInsights = summary.aiInsights;
 
   return (
     <div className="p-6 min-h-screen">
@@ -123,7 +139,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* Stat Cards */}
-      {loading ? (
+      {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[1, 2, 3, 4].map((i) => <SkeletonCard key={i} />)}
         </div>

@@ -91,15 +91,18 @@ export default function Index() {
             <a href="#stats" className="hover:text-foreground transition-colors">Stats</a>
             <a href="#how" className="hover:text-foreground transition-colors">How it Works</a>
           </div>
-          <Link to="/dashboard">
-            <motion.button
-              whileHover={{ scale: 1.04 }}
-              whileTap={{ scale: 0.96 }}
-              className="px-4 py-2 rounded-lg bg-gradient-blue-purple text-white text-sm font-semibold flex items-center gap-2 glow-blue"
-            >
-              Launch App <ArrowRight size={14} />
-            </motion.button>
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/signin" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Sign in</Link>
+            <Link to="/signup">
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                className="px-4 py-2 rounded-lg bg-gradient-blue-purple text-white text-sm font-semibold flex items-center gap-2 glow-blue"
+              >
+                Get Started <ArrowRight size={14} />
+              </motion.button>
+            </Link>
+          </div>
         </div>
       </nav>
 
@@ -166,7 +169,7 @@ export default function Index() {
             transition={{ delay: 0.5 }}
             className="flex flex-col sm:flex-row gap-4 justify-center"
           >
-            <Link to="/dashboard">
+            <Link to="/signup">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}

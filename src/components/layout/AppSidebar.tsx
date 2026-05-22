@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -13,6 +13,7 @@ import {
   Activity,
   Zap,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
@@ -25,6 +26,9 @@ const navItems = [
 export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAdmin, logout } = useAuth();
+  const visibleNavItems = isAdmin ? navItems : navItems.filter((item) => item.path !== "/admin");
 
   return (
     <motion.aside
@@ -60,7 +64,7 @@ export default function AppSidebar() {
 
       {/* Nav items */}
       <nav className="flex-1 p-3 space-y-1 overflow-hidden">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive = location.pathname === item.path || (item.path === "/dashboard" && location.pathname === "/");
           return (
             <Link key={item.path} to={item.path}>
@@ -106,6 +110,10 @@ export default function AppSidebar() {
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           className="sidebar-item w-full text-left"
+          onClick={() => {
+            logout();
+            navigate("/signin");
+          }}
         >
           <LogOut size={18} className="flex-shrink-0" />
           <AnimatePresence>

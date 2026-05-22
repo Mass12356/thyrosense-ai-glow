@@ -3,17 +3,25 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
 import { Upload as UploadIcon, X, FileImage, CheckCircle, Brain, Zap, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useMedGemma } from "@/hooks/useMedGemma";
+import { createReport } from "@/lib/api";
 
 type Stage = "idle" | "preview" | "analyzing" | "complete";
 
 const analysisSteps = [
-  "Loading scan data…",
+  "Uploading image…",
   "Preprocessing image…",
   "Running AI inference…",
-  "Detecting nodules…",
+  "Extracting observations…",
   "Classifying risk level…",
   "Generating report…",
 ];
+
+const getRiskScore = (level: "low" | "moderate" | "high") => {
+  if (level === "high") return 30;
+  if (level === "moderate") return 60;
+  return 85;
+};
 
 export default function Upload() {
   const [stage, setStage] = useState<Stage>("idle");
@@ -22,6 +30,7 @@ export default function Upload() {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const { toast } = useToast();
+  const { analyze, result, error } = useMedGemma();
 
   const onDrop = useCallback((accepted: File[]) => {
     const f = accepted[0];
@@ -35,16 +44,16 @@ export default function Upload() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { "image/*": [], "application/pdf": [] },
+    accept: { "image/jpeg": [], "image/png": [], "image/webp": [] },
     maxFiles: 1,
   });
 
-  const runAnalysis = () => {
+  const runAnalysis = async () => {
+    if (!file) return;
     setStage("analyzing");
     setProgress(0);
     setCurrentStep(0);
 
-    const totalDuration = 4000;
     const steps = analysisSteps.length;
     let stepIdx = 0;
 
@@ -52,19 +61,49 @@ export default function Upload() {
       stepIdx++;
       setCurrentStep(stepIdx);
       if (stepIdx >= steps) clearInterval(stepInterval);
-    }, totalDuration / steps);
+    }, 600);
 
     const progressInterval = setInterval(() => {
       setProgress((p) => {
-        if (p >= 100) {
-          clearInterval(progressInterval);
-          setStage("complete");
-          toast({ title: "Analysis Complete!", description: "Your scan has been analyzed. Risk level: Low." });
-          return 100;
-        }
-        return p + 2;
+        if (p >= 90) return 90;
+        return p + 3;
       });
-    }, totalDuration / 50);
+    }, 140);
+
+    try {
+      const data = await analyze(file);
+      await createReport({
+        fileName: data.fileName || file.name,
+        fileUrl: data.fileUrl || "",
+        analysis: {
+          riskLevel: data.risk_level,
+          riskScore: getRiskScore(data.risk_level),
+          observations: data.observations,
+          recommendation: data.recommendation,
+          summary: data.recommendation
+        },
+        sourceType: "ultrasound",
+        status: "complete"
+      });
+      setProgress(100);
+      setStage("complete");
+      toast({
+        title: "Analysis Complete!",
+        description: `Risk level: ${data.risk_level.toUpperCase()}.`
+      });
+    } catch (err: any) {
+      setStage("preview");
+      setProgress(0);
+      setCurrentStep(0);
+      toast({
+        title: "Analysis failed",
+        description: err?.message || "Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      clearInterval(stepInterval);
+      clearInterval(progressInterval);
+    }
   };
 
   const reset = () => {
@@ -79,7 +118,7 @@ export default function Upload() {
     <div className="p-6 min-h-screen max-w-4xl mx-auto">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
         <h1 className="font-display text-3xl font-bold text-foreground">Upload Scan</h1>
-        <p className="text-muted-foreground text-sm mt-1">Upload a thyroid scan for AI-powered analysis</p>
+        <p className="text-muted-foreground text-sm mt-1">Upload a thyroid image for AI-powered analysis</p>
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
@@ -122,11 +161,11 @@ export default function Upload() {
                     <p className="text-muted-foreground text-sm">or click to browse files</p>
                   </div>
                   <div className="flex gap-2 flex-wrap justify-center">
-                    {["JPEG", "PNG", "DICOM", "PDF"].map((fmt) => (
+                    {["JPEG", "PNG", "WEBP"].map((fmt) => (
                       <span key={fmt} className="px-2 py-0.5 rounded-md glass border border-border text-xs text-muted-foreground">{fmt}</span>
                     ))}
                   </div>
-                  <p className="text-xs text-muted-foreground">Max file size: 50MB · HIPAA compliant storage</p>
+                  <p className="text-xs text-muted-foreground">Max file size: 5MB · HIPAA compliant storage</p>
                 </motion.div>
                 </div>
               </motion.div>
@@ -212,15 +251,57 @@ export default function Upload() {
                   </motion.button>
                 )}
 
+                {stage === "preview" && error && (
+                  <div className="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-200">
+                    {error}
+                  </div>
+                )}
+
                 {stage === "complete" && (
+                  <>
                   <div className="space-y-3">
                     <div className="p-3 rounded-xl bg-neon-green/10 border border-neon-green/20 flex items-center gap-3">
                       <CheckCircle size={20} className="text-neon-green flex-shrink-0" />
                       <div>
                         <p className="text-sm font-semibold text-foreground">Analysis Complete!</p>
-                        <p className="text-xs text-muted-foreground">Risk Level: <span className="text-neon-green font-semibold">LOW</span> · Score: 87/100</p>
+                        <p className="text-xs text-muted-foreground">
+                          Risk Level:{" "}
+                          <span
+                            className={`font-semibold ${
+                              result?.risk_level === "high"
+                                ? "text-rose-400"
+                                : result?.risk_level === "moderate"
+                                  ? "text-amber-400"
+                                  : "text-neon-green"
+                            }`}
+                          >
+                            {result?.risk_level ? result.risk_level.toUpperCase() : "UNKNOWN"}
+                          </span>
+                        </p>
                       </div>
                     </div>
+                    {result && (
+                      <div className="p-4 rounded-xl glass border border-border space-y-3">
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground">Observations</p>
+                          <ul className="mt-1 space-y-1 text-xs text-foreground">
+                            {result.observations.map((obs, idx) => (
+                              <li key={`${obs}-${idx}`} className="flex gap-2">
+                                <span className="text-primary">•</span>
+                                <span>{obs}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-muted-foreground">Recommendation</p>
+                          <p className="text-xs text-foreground mt-1">{result.recommendation}</p>
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">
+                          {result.disclaimer}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <button
                         onClick={() => window.location.href = "/dashboard"}
@@ -236,6 +317,7 @@ export default function Upload() {
                       </button>
                     </div>
                   </div>
+                  </>
                 )}
               </motion.div>
             )}
@@ -285,10 +367,10 @@ export default function Upload() {
             <h3 className="font-display font-semibold text-foreground text-sm mb-3">Supported Formats</h3>
             <div className="space-y-2">
               {[
-                { type: "Ultrasound", desc: "JPEG, PNG, DICOM" },
-                { type: "MRI Scan", desc: "DICOM, NIfTI" },
-                { type: "Blood Panel", desc: "PDF, CSV" },
-                { type: "Biopsy Report", desc: "PDF" },
+                { type: "Ultrasound", desc: "JPEG, PNG" },
+                { type: "Clinical Photo", desc: "JPEG, PNG, WEBP" },
+                { type: "Illustrations", desc: "PNG, WEBP" },
+                { type: "Other Images", desc: "JPEG, PNG, WEBP" },
               ].map((f) => (
                 <div key={f.type} className="flex justify-between text-xs">
                   <span className="text-foreground">{f.type}</span>

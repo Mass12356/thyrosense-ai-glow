@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { User, Mail, MapPin, Droplets, Calendar, Edit3, Save, X, Activity, Scan } from "lucide-react";
 import {
   LineChart, Line, ResponsiveContainer, Tooltip,
 } from "recharts";
-import { userProfile, healthMetricsHistory } from "@/data/mockData";
+import { getDashboardSummary, getMe, getReportHistory } from "@/lib/api";
+import type { Report } from "@/lib/types";
 
 const MiniTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ value: number }> }) => {
   if (active && payload?.length) {
@@ -15,8 +17,69 @@ const MiniTooltip = ({ active, payload }: { active?: boolean; payload?: Array<{ 
 
 export default function Profile() {
   const [editing, setEditing] = useState(false);
-  const [profile, setProfile] = useState(userProfile);
-  const [draft, setDraft] = useState(userProfile);
+  const { data: summary } = useQuery({
+    queryKey: ["dashboard-summary"],
+    queryFn: getDashboardSummary
+  });
+  useQuery({
+    queryKey: ["me"],
+    queryFn: getMe
+  });
+  const { data: reportData } = useQuery({
+    queryKey: ["report-history"],
+    queryFn: getReportHistory
+  });
+
+  const profileSeed = summary?.user || {
+    name: "User",
+    email: "",
+    age: 0,
+    gender: "",
+    bloodType: "",
+    lastScan: "N/A",
+    totalScans: 0,
+    healthScore: 0,
+    riskLevel: "Low",
+    doctor: "",
+    location: ""
+  };
+
+  const [profile, setProfile] = useState(profileSeed);
+  const [draft, setDraft] = useState(profileSeed);
+
+  useEffect(() => {
+    setProfile(profileSeed);
+    setDraft(profileSeed);
+  }, [summary]);
+
+  const latestMetrics = useMemo(() => {
+    const reports = (reportData || []) as Report[];
+    const latest = reports[0];
+    const analysis = latest?.analysis || {};
+    return {
+      tsh: analysis.tsh || 0,
+      t3: analysis.t3 || 0,
+      t4: analysis.t4 || 0
+    };
+  }, [reportData]);
+
+  const healthMetricsHistory = useMemo(() => {
+    const reports = (reportData || []) as Report[];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return reports.slice(0, 6).reverse().map((report) => {
+      const analysis = report.analysis || {};
+      const riskLevel = String(analysis.riskLevel || "Low");
+      const score = typeof analysis.riskScore === "number"
+        ? analysis.riskScore
+        : riskLevel.toLowerCase() === "high"
+          ? 30
+          : riskLevel.toLowerCase() === "moderate"
+            ? 60
+            : 85;
+      const date = new Date(report.analyzedDate || report.createdAt || Date.now());
+      return { date: monthNames[date.getMonth()], score };
+    });
+  }, [reportData]);
 
   const save = () => {
     setProfile(draft);
@@ -156,12 +219,12 @@ export default function Profile() {
                   <span className="text-xs text-muted-foreground">Risk Level</span>
                   <div className="w-2 h-2 rounded-full bg-neon-green" />
                 </div>
-                <div className="text-2xl font-display font-bold text-neon-green mb-1">Low</div>
+                <div className="text-2xl font-display font-bold text-neon-green mb-1">{profile.riskLevel || "Low"}</div>
                 <div className="space-y-1">
                   {[
-                    { label: "TSH", val: 2.2, max: 10, color: "#3b82f6" },
-                    { label: "T3", val: 1.4, max: 3, color: "#a855f7" },
-                    { label: "T4", val: 7.9, max: 15, color: "#06b6d4" },
+                    { label: "TSH", val: latestMetrics.tsh, max: 10, color: "#3b82f6" },
+                    { label: "T3", val: latestMetrics.t3, max: 3, color: "#a855f7" },
+                    { label: "T4", val: latestMetrics.t4, max: 15, color: "#06b6d4" },
                   ].map((m) => (
                     <div key={m.label} className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground w-5">{m.label}</span>

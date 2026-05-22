@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Search, Filter, ChevronDown, ChevronUp, Download, Eye, AlertTriangle, CheckCircle } from "lucide-react";
-import { scanHistory } from "@/data/mockData";
+import { getReportHistory } from "@/lib/api";
+import type { Report } from "@/lib/types";
 
 type RiskFilter = "All" | "Low" | "Moderate" | "High";
 
@@ -25,6 +27,40 @@ export default function History() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"date" | "score">("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const { data } = useQuery({
+    queryKey: ["report-history"],
+    queryFn: getReportHistory
+  });
+
+  const scanHistory = useMemo(() => {
+    const reports = (data || []) as Report[];
+    return reports.map((report) => {
+      const analysis = report.analysis || {};
+      const riskLevel = String(analysis.riskLevel || "Low");
+      const score = typeof analysis.riskScore === "number"
+        ? analysis.riskScore
+        : riskLevel.toLowerCase() === "high"
+          ? 30
+          : riskLevel.toLowerCase() === "moderate"
+            ? 60
+            : 85;
+
+      const dateStr = report.analyzedDate || report.createdAt || new Date().toISOString();
+      return {
+        id: report._id,
+        date: dateStr.slice(0, 10),
+        type: report.sourceType || "Ultrasound",
+        riskLevel: riskLevel.charAt(0).toUpperCase() + riskLevel.slice(1),
+        score,
+        status: report.status || "Complete",
+        notes: analysis.summary || analysis.recommendation || "Scan completed.",
+        tsh: analysis.tsh || 0,
+        t3: analysis.t3 || 0,
+        t4: analysis.t4 || 0
+      };
+    });
+  }, [data]);
 
   const filtered = scanHistory
     .filter((s) => {

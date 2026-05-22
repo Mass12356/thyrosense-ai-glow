@@ -1,10 +1,13 @@
 import { motion } from "framer-motion";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 import { Users, Activity, TrendingUp, AlertTriangle, Zap } from "lucide-react";
-import { adminUserStats, adminRiskDistribution, monthlyScanData } from "@/data/mockData";
+import { getAdminReportHistory, getAdminSummary } from "@/lib/api";
+import type { Report } from "@/lib/types";
 
 const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) => {
   if (active && payload?.length) {
@@ -20,14 +23,49 @@ const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?:
   return null;
 };
 
-const statCards = [
-  { label: "Total Users", value: "1,920", sub: "+340 this month", icon: Users, color: "text-neon-blue", glowClass: "shadow-[0_0_15px_hsl(217_91%_60%/0.3)]" },
-  { label: "Scans This Month", value: "42", sub: "+20% vs last month", icon: Activity, color: "text-neon-purple", glowClass: "shadow-[0_0_15px_hsl(270_80%_65%/0.3)]" },
-  { label: "Avg Health Score", value: "74.2", sub: "↑ +2.1 pts", icon: TrendingUp, color: "text-neon-green", glowClass: "shadow-[0_0_15px_hsl(142_76%_50%/0.3)]" },
-  { label: "High Risk Users", value: "270", sub: "14% of total", icon: AlertTriangle, color: "text-neon-red", glowClass: "shadow-[0_0_15px_hsl(0_90%_60%/0.3)]" },
-];
-
 export default function Admin() {
+  const { data: summary } = useQuery({
+    queryKey: ["admin-summary"],
+    queryFn: getAdminSummary
+  });
+  const { data: reportData } = useQuery({
+    queryKey: ["admin-reports"],
+    queryFn: getAdminReportHistory
+  });
+
+  const reports = (reportData || []) as Report[];
+  const monthlyScanData = summary?.monthlyScanData || [];
+  const adminRiskDistribution = summary?.riskDistributionData || [];
+
+  const statCards = useMemo(() => {
+    const scanThisMonth = monthlyScanData[monthlyScanData.length - 1]?.scans || 0;
+    const scores = reports.map((r) => {
+      const analysis = r.analysis || {};
+      const level = String(analysis.riskLevel || "Low");
+      if (typeof analysis.riskScore === "number") return analysis.riskScore;
+      return level.toLowerCase() === "high" ? 30 : level.toLowerCase() === "moderate" ? 60 : 85;
+    });
+    const avgScore = scores.length
+      ? (scores.reduce((a, v) => a + v, 0) / scores.length).toFixed(1)
+      : "0.0";
+    const highRisk = reports.filter((r) => String(r.analysis?.riskLevel || "").toLowerCase() === "high").length;
+
+    return [
+      { label: "Total Users", value: String(summary?.totalUsers ?? 0), sub: "Platform", icon: Users, color: "text-neon-blue", glowClass: "shadow-[0_0_15px_hsl(217_91%_60%/0.3)]" },
+      { label: "Scans This Month", value: String(scanThisMonth), sub: "Platform", icon: Activity, color: "text-neon-purple", glowClass: "shadow-[0_0_15px_hsl(270_80%_65%/0.3)]" },
+      { label: "Avg Health Score", value: avgScore, sub: "Platform", icon: TrendingUp, color: "text-neon-green", glowClass: "shadow-[0_0_15px_hsl(142_76%_50%/0.3)]" },
+      { label: "High Risk Users", value: String(highRisk), sub: "Platform", icon: AlertTriangle, color: "text-neon-red", glowClass: "shadow-[0_0_15px_hsl(0_90%_60%/0.3)]" },
+    ];
+  }, [monthlyScanData, reports, summary]);
+
+  const adminUserStats = useMemo(() => {
+    let cumulative = 0;
+    return monthlyScanData.map((m) => {
+      cumulative += m.scans;
+      return { month: m.month, users: cumulative };
+    });
+  }, [monthlyScanData]);
+
   return (
     <div className="p-6 min-h-screen">
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
